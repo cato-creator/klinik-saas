@@ -27,7 +27,7 @@ jobs:
           for ($i=1; $i -le 3; $i++) {
             npm ci --no-audit --no-fund
             if ($LASTEXITCODE -eq 0) { exit 0 }
-            Write-Host "::warning::npm ci gagal (percobaan $i) — bersihkan & ulangi"
+            Write-Host ("npm ci failed attempt " + $i + ", cleaning and retrying")
             cmd /c "rmdir /s /q node_modules" 2>$null
             Start-Sleep -Seconds 15
           }
