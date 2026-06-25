@@ -143,6 +143,10 @@ export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
     compatibility_date: "2025-03-25",
     compatibility_flags: ["nodejs_compat", "global_fetch_strictly_public"],
     account_id: clinic.cloudflare_account_id,
+    // workers_dev: worker dapat URL <nama>.<subdomain>.workers.dev. Tanpa ini (dan
+    // tanpa routes), wrangler menolak deploy ("specify routes or register a
+    // workers.dev subdomain"). Domain custom klinik dihubungkan manual via route/DNS.
+    workers_dev: true,
     assets: { directory: ".open-next/assets", binding: "ASSETS" },
     placement: { mode: "smart" },
     // Ganti __FILL_KV_ID__ dengan id namespace hasil `wrangler kv namespace create klinik_cache`.
