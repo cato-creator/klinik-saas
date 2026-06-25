@@ -2,8 +2,12 @@
 # Provisioning klinik self-hosted via GitHub Actions (alternatif GitLab CI).
 #
 # Dipicu dari panel super admin (tombol "Deploy otomatis") lewat repository_dispatch.
-# Jalan di RUNNER SENDIRI (PC kita, label self-hosted) — pakai Node/npm/wrangler
-# yang sudah terpasang. Logika ada di scripts/ci-provision.mjs (CI-agnostic).
+# Jalan di RUNNER SENDIRI (PC kita, label self-hosted) sebagai Windows service.
+# Logika ada di scripts/ci-provision.mjs (CI-agnostic).
+#
+# Catatan: runner jalan sbg NT AUTHORITY\NETWORK SERVICE yang execution policy-nya
+# Restricted -> default shell PowerShell diblokir. Maka default shell job ini
+# di-override pakai `-ExecutionPolicy Bypass` agar script step bisa dijalankan.
 # ============================================================
 name: Provision clinic
 
@@ -14,6 +18,9 @@ on:
 jobs:
   provision-clinic:
     runs-on: [self-hosted]
+    defaults:
+      run:
+        shell: "powershell -ExecutionPolicy Bypass -Command \". '{0}'\""
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +29,6 @@ jobs:
         run: node --version
 
       - name: Install deps
-        shell: powershell
         run: |
           for ($i=1; $i -le 3; $i++) {
             npm ci --no-audit --no-fund
