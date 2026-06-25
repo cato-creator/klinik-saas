@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "klinik-saas",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // Smart Placement ON — jalankan worker mendekat ke DB Supabase (Singapura)
+  // saat bottleneck-nya query DB. Lihat CLAUDE.md §12.3 poin 2.
+  "placement": { "mode": "smart" },
+  // Incremental cache OpenNext (ISR + Next Data Cache / unstable_cache) → Workers KV.
+  // Dipakai utk cache data landing publik per-subdomain (lib/tenant/landing.ts).
+  "kv_namespaces": [
+    { "binding": "NEXT_INC_CACHE_KV", "id": "60f8ae5b252b4732a9f7dab571bed260" }
+  ],
+  // Variabel & secret di-set lewat: `wrangler secret put NAMA` (jangan commit nilainya).
+  // NEXT_PUBLIC_* boleh ditaruh di "vars" karena memang publik.
+  // CLOUDFLARE_ZONE_ID bukan rahasia (zone apkfun.eu.org) → aman di vars.
+  // CLOUDFLARE_API_TOKEN = RAHASIA → set via `wrangler secret put CLOUDFLARE_API_TOKEN`.
+  "vars": {
+    "CLOUDFLARE_ZONE_ID": "dc5c68f4a73620c72b2d4e71bc704867"
+  }
+}
