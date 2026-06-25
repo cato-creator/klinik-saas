@@ -90,6 +90,15 @@ export default function ClinicForm({ clinic }: { clinic?: SelfHostedClinic }) {
           <div className="sm:col-span-2">
             <Field name="supabase_anon_key" label="Supabase anon key (semi-publik)" defaultValue={clinic?.supabase_anon_key} hint="Boleh disimpan apa adanya — key ini memang ikut ke browser." />
           </div>
+          <div className="sm:col-span-2">
+            <Field
+              name="supabase_pooler_url"
+              label="Session Pooler URL (untuk migrasi)"
+              defaultValue={clinic?.supabase_pooler_url}
+              placeholder="postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-...pooler.supabase.com:5432/postgres"
+              hint="WAJIB. Salin dari Supabase → Project Settings → Database → Connection string → Session pooler. Biarkan teks [YOUR-PASSWORD] apa adanya — password disuntik otomatis dari brankas."
+            />
+          </div>
           <Field name="cloudflare_account_id" label="Cloudflare account ID" defaultValue={clinic?.cloudflare_account_id} />
           <Field name="cloudflare_pages_project" label="Nama project Worker/Pages" defaultValue={clinic?.cloudflare_pages_project} />
         </div>

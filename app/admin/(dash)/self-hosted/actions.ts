@@ -66,6 +66,7 @@ function readInfraFields(formData: FormData) {
     supabase_url: str("supabase_url") || null,
     supabase_project_ref: str("supabase_project_ref") || null,
     supabase_anon_key: str("supabase_anon_key") || null,
+    supabase_pooler_url: str("supabase_pooler_url") || null,
     cloudflare_account_id: str("cloudflare_account_id") || null,
     cloudflare_pages_project: str("cloudflare_pages_project") || null,
     license_status: str("license_status") || "active",

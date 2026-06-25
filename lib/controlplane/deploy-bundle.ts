@@ -61,12 +61,15 @@ function slugifyWorkerName(raw: string): string {
   return s || "klinik";
 }
 
-// Bangun connection string Postgres (DIRECT, port 5432 — mendukung DDL/migrasi).
-// Catatan: koneksi direct `db.<ref>.supabase.co` kini IPv6-only di Supabase. Bila
-// jaringan operator tak punya IPv6, runbook menyuruh ganti dengan Session Pooler
-// (IPv4) dari dashboard Supabase. Password di-encode agar karakter spesial aman.
-function buildDbUrl(ref: string, password: string): string {
-  return `postgresql://postgres:${encodeURIComponent(password)}@db.${ref}.supabase.co:5432/postgres`;
+// Bangun connection string Postgres untuk migrasi DDL.
+// PRIORITAS: Session Pooler (IPv4) bila diisi — koneksi direct `db.<ref>.supabase.co`
+// kini IPv6-only di Supabase sehingga gagal di jaringan tanpa IPv6. Pooler URL
+// disimpan dengan placeholder [YOUR-PASSWORD]; password asli disuntik di sini.
+function buildDbUrl(ref: string | null, password: string, poolerUrl: string | null): string {
+  const enc = encodeURIComponent(password);
+  if (poolerUrl) return poolerUrl.split("[YOUR-PASSWORD]").join(enc);
+  if (ref) return `postgresql://postgres:${enc}@db.${ref}.supabase.co:5432/postgres`;
+  return "";
 }
 
 export type BuildBundleInput = {
@@ -90,8 +93,10 @@ export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
 
   // Validasi kelengkapan — sebut field yang kosong agar operator tahu apa yang kurang.
   const missing: string[] = [];
+  const poolerUrl = clinic.supabase_pooler_url?.trim() || null;
   if (!ref) missing.push("Supabase URL / project ref");
   if (!clinic.supabase_anon_key) missing.push("Supabase anon key");
+  if (!poolerUrl) missing.push("Session Pooler URL (untuk migrasi)");
   if (!secrets.supabase_service_role) missing.push("Secret: Supabase service_role");
   if (!secrets.supabase_db_password) missing.push("Secret: Password database Supabase");
   if (!secrets.cloudflare_token) missing.push("Secret: Cloudflare API token");
@@ -99,7 +104,9 @@ export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
   if (!rootDomain) missing.push("Domain tujuan (target_domain)");
   if (!clinic.owner_email) missing.push("Email owner (untuk akun login)");
 
-  const dbUrl = ref ? buildDbUrl(ref, secrets.supabase_db_password) : "";
+  const dbUrl = buildDbUrl(ref, secrets.supabase_db_password, poolerUrl);
+  // URL Supabase utk API/seed: pakai kolom, atau bentuk dari ref bila kosong.
+  const supabaseUrl = clinic.supabase_url || (ref ? `https://${ref}.supabase.co` : null);
 
   const config = {
     clinicId: clinic.id,
@@ -113,7 +120,7 @@ export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
       password: seedPassword,
     },
     supabase: {
-      url: clinic.supabase_url,
+      url: supabaseUrl,
       projectRef: ref,
       anonKey: clinic.supabase_anon_key,
       serviceRoleKey: secrets.supabase_service_role,

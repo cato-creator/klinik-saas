@@ -35,6 +35,8 @@ export type SelfHostedClinic = {
   supabase_url: string | null;
   supabase_project_ref: string | null;
   supabase_anon_key: string | null;
+  supabase_pooler_url: string | null; // Session Pooler (IPv4) — utk migrasi DDL
+
   cloudflare_account_id: string | null;
   cloudflare_pages_project: string | null;
   provisioning_status: "draft" | "provisioning" | "live" | "suspended" | "failed";
