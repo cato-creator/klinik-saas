@@ -99,6 +99,10 @@ const cf = cfg.cloudflare;
 const cfEnv = { CLOUDFLARE_API_TOKEN: cf.apiToken, CLOUDFLARE_ACCOUNT_ID: cf.accountId };
 
 // 3a. Pastikan KV namespace ada di akun klinik, ambil id-nya.
+// Id KV = 32 karakter heksadesimal. Ekstrak robust dari output wrangler (format
+// berubah antar versi: TOML `id = "..."`, JSON `"id": "..."`, dll).
+const extractKvId = (text) => ((text || "").match(/[0-9a-f]{32}/i) ?? [])[0] ?? "";
+
 console.log("\n▶ Menyiapkan KV namespace…");
 let kvId = "";
 {
@@ -107,11 +111,14 @@ let kvId = "";
     encoding: "utf8",
     env: { ...process.env, ...cfEnv },
   });
-  try {
-    const arr = JSON.parse(list.stdout || "[]");
-    kvId = arr.find((n) => n.title?.endsWith("klinik_cache"))?.id ?? "";
-  } catch {
-    /* output bukan JSON → buat baru */
+  const jsonMatch = (list.stdout || "").match(/\[[\s\S]*\]/); // ambil array JSON, abaikan baris log lain
+  if (jsonMatch) {
+    try {
+      const arr = JSON.parse(jsonMatch[0]);
+      kvId = arr.find((n) => n.title === "klinik_cache" || n.title?.endsWith("klinik_cache"))?.id ?? "";
+    } catch {
+      /* abaikan, lanjut buat baru */
+    }
   }
   if (!kvId) {
     const create = spawnSync("npx", ["wrangler", "kv", "namespace", "create", "klinik_cache"], {
@@ -119,11 +126,13 @@ let kvId = "";
       encoding: "utf8",
       env: { ...process.env, ...cfEnv },
     });
-    console.log(create.stdout || create.stderr);
-    kvId = (create.stdout?.match(/id\s*=\s*"([a-f0-9]+)"/i) ?? [])[1] ?? "";
+    if (create.stdout) console.log(create.stdout);
+    if (create.stderr) console.log(create.stderr);
+    kvId = extractKvId(create.stdout) || extractKvId(create.stderr);
   }
 }
 if (!kvId) await fail("pages_created", "Gagal membuat/menemukan KV namespace di akun klinik.");
+console.log("✓ KV namespace id: " + kvId);
 
 // Tempel id KV ke wrangler config.
 const wranglerRaw = readFileSync("wrangler.selfhosted.jsonc", "utf8");

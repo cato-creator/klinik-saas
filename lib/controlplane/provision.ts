@@ -13,6 +13,7 @@ import type { SecretType, SelfHostedClinic } from "./self-hosted";
 
 export async function assembleBundleForClinic(
   clinicId: string,
+  seedPassword?: string | null,
 ): Promise<{ ok: true; bundle: DeployBundle } | { ok: false; error: string }> {
   const db = createControlPlaneClient();
 
@@ -52,7 +53,7 @@ export async function assembleBundleForClinic(
   const bundle = buildDeployBundle({
     clinic: clinic as SelfHostedClinic,
     secrets,
-    seedPassword: generateSeedPassword(),
+    seedPassword: seedPassword || generateSeedPassword(),
   });
   return { ok: true, bundle };
 }

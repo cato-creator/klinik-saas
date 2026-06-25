@@ -116,10 +116,14 @@ async function seedAccount() {
     if (!/already.*registered|exists/i.test(error.message)) {
       die(`Gagal membuat akun: ${error.message}`);
     }
-    console.warn("⚠️  Akun sudah ada, memastikan role…");
+    console.warn("⚠️  Akun sudah ada, memastikan role & reset password…");
     // Ambil id user yang sudah ada lewat listUsers (email match).
     const { data: list } = await supabase.auth.admin.listUsers();
     userId = list?.users?.find((u) => u.email?.toLowerCase() === owner.email.toLowerCase())?.id;
+    // Reset password ke nilai awal yang ditampilkan ke super admin, agar selalu cocok.
+    if (userId) {
+      await supabase.auth.admin.updateUserById(userId, { password: owner.password });
+    }
   }
 
   if (userId) {

@@ -14,6 +14,7 @@ import {
   type SecretType,
 } from "@/lib/controlplane/self-hosted";
 import { assembleBundleForClinic } from "@/lib/controlplane/provision";
+import { generateSeedPassword } from "@/lib/controlplane/deploy-bundle";
 import { createDeployJob } from "@/lib/controlplane/deploy-jobs";
 import { triggerPipeline } from "@/lib/controlplane/gitlab";
 import { triggerWorkflow, isGitHubConfigured } from "@/lib/controlplane/github";
@@ -345,7 +346,14 @@ export async function generateDeployBundle(
 // Provider: GitHub (repository_dispatch) bila GITHUB_REPO+GITHUB_TOKEN diset, jika
 // tidak GitLab (pipeline trigger). Runner mengambil config & melaporkan langkah
 // balik ke panel via token itu.
-export type AutoDeployResult = { ok: boolean; error?: string; pipelineUrl?: string };
+export type AutoDeployResult = {
+  ok: boolean;
+  error?: string;
+  pipelineUrl?: string;
+  ownerEmail?: string;
+  ownerPassword?: string;
+  withCloudflare?: boolean;
+};
 
 function panelBaseUrl(): string {
   const BOM = String.fromCharCode(0xfeff);
@@ -368,15 +376,25 @@ export async function triggerAutoDeploy(
   const db = createControlPlaneClient();
   const { data: clinic } = await db
     .from("selfhosted_clinics")
-    .select("id, name")
+    .select("id, name, owner_email")
     .eq("id", clinicId)
     .maybeSingle();
   if (!clinic) return { ok: false, error: "Klinik tidak ditemukan." };
 
-  const job = await createDeployJob(clinicId, me.id);
+  // Password awal akun owner: digenerate sekali di sini, disimpan di job (dipakai
+  // runner saat seed) dan ditampilkan ke super admin satu kali.
+  const seedPassword = generateSeedPassword();
+  const withCloudflare = String(formData.get("deploy_cloudflare") ?? "") === "1";
+
+  const job = await createDeployJob(clinicId, me.id, seedPassword);
   if ("error" in job) return { ok: false, error: `Gagal membuat job: ${job.error}` };
 
-  const vars = { CLINIC_ID: clinicId, JOB_TOKEN: job.token, PANEL_URL: panelUrl };
+  const vars: Record<string, string> = {
+    CLINIC_ID: clinicId,
+    JOB_TOKEN: job.token,
+    PANEL_URL: panelUrl,
+  };
+  if (withCloudflare) vars.DEPLOY_CLOUDFLARE = "1";
   const provider = isGitHubConfigured() ? "github" : "gitlab";
   const result = provider === "github" ? await triggerWorkflow(vars) : await triggerPipeline(vars);
 
@@ -387,6 +405,7 @@ export async function triggerAutoDeploy(
     clinicId,
     metadata: {
       provider,
+      with_cloudflare: withCloudflare,
       ok: result.ok,
       web_url: result.ok ? result.webUrl : null,
       error: result.ok ? null : result.error,
@@ -403,7 +422,13 @@ export async function triggerAutoDeploy(
     .eq("id", clinicId);
 
   revalidatePath(`/admin/self-hosted/${clinicId}`);
-  return { ok: true, pipelineUrl: result.webUrl ?? undefined };
+  return {
+    ok: true,
+    pipelineUrl: result.webUrl ?? undefined,
+    ownerEmail: (clinic.owner_email as string | null) ?? undefined,
+    ownerPassword: seedPassword,
+    withCloudflare,
+  };
 }
 
 // ============ HAPUS KLINIK SELF-HOSTED (untuk test/salah input) ============

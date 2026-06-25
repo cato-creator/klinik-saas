@@ -27,10 +27,12 @@ function randomToken(): string {
 }
 
 // Buat job + token. Mengembalikan token PLAINTEXT (hanya saat ini) untuk dikirim
-// ke GitLab. DB hanya menyimpan hash-nya.
+// ke CI. DB hanya menyimpan hash token. seedPassword disimpan agar runner & super
+// admin memakai password awal yang sama.
 export async function createDeployJob(
   clinicId: string,
   createdBy?: string | null,
+  seedPassword?: string | null,
 ): Promise<{ token: string; jobId: string } | { error: string }> {
   const token = randomToken();
   const tokenHash = await hashToken(token);
@@ -44,6 +46,7 @@ export async function createDeployJob(
       token_hash: tokenHash,
       expires_at: expiresAt,
       created_by: createdBy ?? null,
+      seed_password: seedPassword ?? null,
     })
     .select("id")
     .single();
@@ -53,25 +56,25 @@ export async function createDeployJob(
 }
 
 // Verifikasi token untuk sebuah klinik. Valid bila: hash cocok, clinic_id cocok,
-// belum kedaluwarsa. Mengembalikan jobId bila valid.
+// belum kedaluwarsa. Mengembalikan jobId + seedPassword bila valid.
 export async function verifyDeployJob(
   clinicId: string,
   token: string,
-): Promise<{ ok: true; jobId: string } | { ok: false }> {
+): Promise<{ ok: true; jobId: string; seedPassword: string | null } | { ok: false }> {
   if (!token) return { ok: false };
   const tokenHash = await hashToken(token);
 
   const db = createControlPlaneClient();
   const { data } = await db
     .from("selfhosted_deploy_jobs")
-    .select("id, expires_at")
+    .select("id, expires_at, seed_password")
     .eq("clinic_id", clinicId)
     .eq("token_hash", tokenHash)
     .maybeSingle();
 
   if (!data) return { ok: false };
   if (new Date(data.expires_at).getTime() < Date.now()) return { ok: false };
-  return { ok: true, jobId: data.id };
+  return { ok: true, jobId: data.id, seedPassword: data.seed_password ?? null };
 }
 
 // Tandai hasil akhir job (dipanggil runner saat selesai/gagal).

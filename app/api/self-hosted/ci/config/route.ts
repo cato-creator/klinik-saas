@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   const job = await verifyDeployJob(clinicId, jobToken);
   if (!job.ok) return NextResponse.json({ error: "Token tidak valid / kedaluwarsa" }, { status: 401 });
 
-  const assembled = await assembleBundleForClinic(clinicId);
+  const assembled = await assembleBundleForClinic(clinicId, job.seedPassword);
   if (!assembled.ok) return NextResponse.json({ error: assembled.error }, { status: 400 });
 
   await logSelfHostedAudit({
