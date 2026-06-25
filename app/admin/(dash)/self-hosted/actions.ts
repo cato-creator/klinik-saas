@@ -12,9 +12,10 @@ import {
   logSelfHostedAudit,
   PROVISIONING_STEPS,
   type SecretType,
-  type SelfHostedClinic,
 } from "@/lib/controlplane/self-hosted";
-import { buildDeployBundle, type DeploySecrets } from "@/lib/controlplane/deploy-bundle";
+import { assembleBundleForClinic } from "@/lib/controlplane/provision";
+import { createDeployJob } from "@/lib/controlplane/deploy-jobs";
+import { triggerPipeline } from "@/lib/controlplane/gitlab";
 
 export type ActionResult = { ok: boolean; error?: string; value?: string; redirectUrl?: string };
 
@@ -305,15 +306,6 @@ export type DeployBundleResult = {
   runbook?: string;
 };
 
-// Password awal yang mudah dibaca/diketik (huruf+angka, tanpa karakter ambigu).
-function generateSeedPassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out;
-}
-
 export async function generateDeployBundle(
   _prev: DeployBundleResult | null,
   formData: FormData,
@@ -322,46 +314,9 @@ export async function generateDeployBundle(
   const clinicId = String(formData.get("clinic_id") ?? "");
   if (!clinicId) return { ok: false, error: "Klinik tidak valid." };
 
-  const db = createControlPlaneClient();
-  const { data: clinic, error: clinicErr } = await db
-    .from("selfhosted_clinics")
-    .select("*")
-    .eq("id", clinicId)
-    .maybeSingle();
-  if (clinicErr) return { ok: false, error: clinicErr.message };
-  if (!clinic) return { ok: false, error: "Klinik tidak ditemukan." };
-
-  // Ambil & dekripsi ketiga secret (yang ada).
-  const { data: rows, error: secErr } = await db
-    .from("selfhosted_secrets")
-    .select("secret_type, ciphertext, nonce")
-    .eq("clinic_id", clinicId);
-  if (secErr) return { ok: false, error: secErr.message };
-
-  const secrets: DeploySecrets = {
-    supabase_service_role: "",
-    supabase_db_password: "",
-    cloudflare_token: "",
-  };
-  try {
-    for (const row of rows ?? []) {
-      const t = row.secret_type as SecretType;
-      if (t in secrets) {
-        secrets[t as keyof DeploySecrets] = await openSecret({
-          ciphertext: row.ciphertext,
-          nonce: row.nonce,
-        });
-      }
-    }
-  } catch {
-    return { ok: false, error: "Gagal mendekripsi secret (master key salah / berubah?)." };
-  }
-
-  const bundle = buildDeployBundle({
-    clinic: clinic as SelfHostedClinic,
-    secrets,
-    seedPassword: generateSeedPassword(),
-  });
+  const assembled = await assembleBundleForClinic(clinicId);
+  if (!assembled.ok) return { ok: false, error: assembled.error };
+  const bundle = assembled.bundle;
 
   // Audit WAJIB: paket berisi plaintext secret.
   await logSelfHostedAudit({
@@ -381,6 +336,71 @@ export async function generateDeployBundle(
     wranglerJson: bundle.wranglerJson,
     runbook: bundle.runbook,
   };
+}
+
+// ============ DEPLOY OTOMATIS (Fase 2B — picu pipeline GitLab) ============
+// Membuat token job sekali-pakai, lalu memicu pipeline GitLab yang jalan di runner
+// kita. Runner mengambil config & melaporkan langkah balik ke panel via token itu.
+export type AutoDeployResult = { ok: boolean; error?: string; pipelineUrl?: string };
+
+function panelBaseUrl(): string {
+  const BOM = String.fromCharCode(0xfeff);
+  const root = (process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "").split(BOM).join("").trim();
+  return root ? `https://${root}` : "";
+}
+
+export async function triggerAutoDeploy(
+  _prev: AutoDeployResult | null,
+  formData: FormData,
+): Promise<AutoDeployResult> {
+  const me = await actor();
+  const clinicId = String(formData.get("clinic_id") ?? "");
+  if (!clinicId) return { ok: false, error: "Klinik tidak valid." };
+
+  const panelUrl = panelBaseUrl();
+  if (!panelUrl) return { ok: false, error: "NEXT_PUBLIC_ROOT_DOMAIN belum di-set." };
+
+  // Pastikan klinik ada (di control-plane).
+  const db = createControlPlaneClient();
+  const { data: clinic } = await db
+    .from("selfhosted_clinics")
+    .select("id, name")
+    .eq("id", clinicId)
+    .maybeSingle();
+  if (!clinic) return { ok: false, error: "Klinik tidak ditemukan." };
+
+  const job = await createDeployJob(clinicId, me.id);
+  if ("error" in job) return { ok: false, error: `Gagal membuat job: ${job.error}` };
+
+  const result = await triggerPipeline({
+    CLINIC_ID: clinicId,
+    JOB_TOKEN: job.token,
+    PANEL_URL: panelUrl,
+  });
+
+  await logSelfHostedAudit({
+    actorUserId: me.id,
+    actorEmail: me.email,
+    action: "deploy.trigger",
+    clinicId,
+    metadata: {
+      ok: result.ok,
+      pipeline_id: result.ok ? result.pipelineId : null,
+      error: result.ok ? null : result.error,
+    },
+    ip: await clientIp(),
+  });
+
+  if (!result.ok) return { ok: false, error: result.error };
+
+  // Status provisioning → provisioning, supaya badge berubah.
+  await db
+    .from("selfhosted_clinics")
+    .update({ provisioning_status: "provisioning", updated_at: new Date().toISOString() })
+    .eq("id", clinicId);
+
+  revalidatePath(`/admin/self-hosted/${clinicId}`);
+  return { ok: true, pipelineUrl: result.webUrl ?? undefined };
 }
 
 // ============ HAPUS KLINIK SELF-HOSTED (untuk test/salah input) ============

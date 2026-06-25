@@ -11,6 +11,15 @@
 
 import type { SelfHostedClinic } from "./self-hosted";
 
+// Password awal akun (huruf+angka non-ambigu) — Web Crypto, aman di Worker & Node.
+export function generateSeedPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
 export type DeploySecrets = {
   supabase_service_role: string;
   supabase_db_password: string;

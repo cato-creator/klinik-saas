@@ -13,6 +13,7 @@ import ClinicForm from "../clinic-form";
 import SecretVault from "../secret-vault";
 import StepsChecklist from "../steps-checklist";
 import DeployBundle from "../deploy-bundle";
+import AutoDeploy from "../auto-deploy";
 import DangerZone from "../danger-zone";
 import { ProvBadge, LicenseBadge } from "../badges";
 
@@ -26,6 +27,9 @@ const AUDIT_LABEL: Record<string, string> = {
   "secret.update": "Secret diganti",
   "secret.reveal": "Secret ditampilkan",
   "bundle.generate": "Paket deploy dibuat",
+  "deploy.trigger": "Deploy otomatis dipicu",
+  "deploy.config_fetch": "Runner mengambil config",
+  "deploy.step": "Langkah deploy dilaporkan",
   "step.update": "Langkah diperbarui",
 };
 
@@ -84,11 +88,20 @@ export default async function SelfHostedDetailPage({ params }: { params: Promise
         <SecretVault clinicId={clinic.id} presence={presence} />
       </section>
 
-      {/* Paket deploy (Fase 2A — semi-otomatis) */}
+      {/* Deploy otomatis (Fase 2B — pipeline GitLab) */}
       <section className={card}>
-        <h2 className="mb-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">⚙️ Paket deploy</h2>
+        <h2 className="mb-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">🚀 Deploy otomatis</h2>
         <p className="mb-3 text-xs text-zinc-500">
-          Rakit config + perintah siap-jalankan untuk provisioning klinik ini ke infra mereka.
+          Picu pipeline GitLab di runner sendiri untuk provisioning otomatis.
+        </p>
+        <AutoDeploy clinicId={clinic.id} />
+      </section>
+
+      {/* Paket deploy (Fase 2A — semi-otomatis / cadangan manual) */}
+      <section className={card}>
+        <h2 className="mb-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">⚙️ Paket deploy (manual)</h2>
+        <p className="mb-3 text-xs text-zinc-500">
+          Cadangan: rakit config + perintah siap-jalankan untuk provisioning manual.
         </p>
         <DeployBundle clinicId={clinic.id} />
       </section>
