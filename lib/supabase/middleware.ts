@@ -24,32 +24,51 @@ function shouldCanonicalize(path: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+
+  // ── MODE SATU-KLINIK (self-hosted) ──
+  // Bila SELF_HOSTED_CLINIC_SUBDOMAIN diset, instance ini = SATU klinik berdiri
+  // sendiri (produk bayar-sekali). App SELALU "jadi" klinik itu apa pun host-nya
+  // (root domain langsung tampil landing klinik), dan area platform (super admin,
+  // affiliator, signup) DIBLOKIR — tak ada jejak platform sama sekali.
+  const selfHostedSub = (process.env.SELF_HOSTED_CLINIC_SUBDOMAIN ?? "").trim().toLowerCase();
+  const isSelfHosted = !!selfHostedSub;
+
   // Deteksi subdomain klinik dari host, lalu teruskan sebagai header request
   // supaya bisa dibaca server components (booking publik, landing klinik).
   const host = request.headers.get("host");
-  const platformSub = subdomainFromHost(host); // non-null HANYA di *.ROOT_DOMAIN
-  let subdomain = platformSub;
-  // Custom domain (tier premium): bila host bukan subdomain platform tapi
-  // kandidat domain milik klinik, resolve ke subdomain kliniknya via tabel
-  // `domains`. Downstream lalu bekerja persis seperti diakses lewat subdomain.
-  if (!subdomain && isCustomDomainCandidate(host)) {
-    subdomain = await resolveCustomDomainSubdomain(host);
-  }
+  let subdomain: string | null;
 
-  // Canonical penuh (SEMUA halaman kecuali infra) dengan 307 sementara. Bisa
-  // dimatikan darurat via env DISABLE_CANONICAL_REDIRECT=true.
-  if (
-    !CANONICAL_DISABLED &&
-    platformSub &&
-    shouldCanonicalize(request.nextUrl.pathname)
-  ) {
-    const custom = await customDomainForSubdomain(platformSub);
-    if (custom) {
-      const target = request.nextUrl.clone();
-      target.protocol = "https:";
-      target.host = custom;
-      target.port = "";
-      return NextResponse.redirect(target, 307);
+  if (isSelfHosted) {
+    subdomain = selfHostedSub;
+    // Blokir area khusus platform → arahkan ke beranda klinik.
+    if (path.startsWith("/admin") || path.startsWith("/affiliate") || path.startsWith("/daftar")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      return NextResponse.redirect(url);
+    }
+  } else {
+    const platformSub = subdomainFromHost(host); // non-null HANYA di *.ROOT_DOMAIN
+    subdomain = platformSub;
+    // Custom domain (tier premium): bila host bukan subdomain platform tapi
+    // kandidat domain milik klinik, resolve ke subdomain kliniknya via tabel
+    // `domains`. Downstream lalu bekerja persis seperti diakses lewat subdomain.
+    if (!subdomain && isCustomDomainCandidate(host)) {
+      subdomain = await resolveCustomDomainSubdomain(host);
+    }
+
+    // Canonical penuh (SEMUA halaman kecuali infra) dengan 307 sementara. Bisa
+    // dimatikan darurat via env DISABLE_CANONICAL_REDIRECT=true. (Tidak berlaku
+    // di mode self-hosted — domain klinik sudah final.)
+    if (!CANONICAL_DISABLED && platformSub && shouldCanonicalize(path)) {
+      const custom = await customDomainForSubdomain(platformSub);
+      if (custom) {
+        const target = request.nextUrl.clone();
+        target.protocol = "https:";
+        target.host = custom;
+        target.port = "";
+        return NextResponse.redirect(target, 307);
+      }
     }
   }
 
@@ -85,7 +104,6 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
   const isAdminArea = path.startsWith("/admin");
   const isAffiliateArea = path.startsWith("/affiliate");
   const isLoginPage = path === "/admin/login";

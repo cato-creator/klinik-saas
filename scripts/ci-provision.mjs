@@ -175,6 +175,8 @@ putSecret("SUPABASE_SERVICE_ROLE_KEY", cfg.supabase.serviceRoleKey);
 putSecret("NEXT_PUBLIC_SUPABASE_URL", cfg.supabase.url);
 putSecret("NEXT_PUBLIC_SUPABASE_ANON_KEY", cfg.supabase.anonKey);
 putSecret("NEXT_PUBLIC_ROOT_DOMAIN", cfg.rootDomain);
+// Kunci MODE SATU-KLINIK: app selalu jadi klinik ini (tanpa super admin).
+putSecret("SELF_HOSTED_CLINIC_SUBDOMAIN", cfg.clinic.subdomain);
 await reportStep("env_set", "done");
 
 // 3d. DNS & smoke test tetap manual.

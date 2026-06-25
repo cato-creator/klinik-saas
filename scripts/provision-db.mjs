@@ -39,11 +39,12 @@ const dbUrl = cfg?.supabase?.dbUrl;
 const supabaseUrl = cfg?.supabase?.url;
 const serviceKey = cfg?.supabase?.serviceRoleKey;
 const owner = cfg?.owner ?? {};
-const seedRole = cfg?.seedRole === "owner" ? "owner" : "super_admin";
+const clinicCfg = cfg?.clinic ?? {};
 
 if (!dbUrl) die("config.supabase.dbUrl kosong.");
 if (!supabaseUrl || !serviceKey) die("config.supabase.url / serviceRoleKey kosong.");
 if (!owner.email || !owner.password) die("config.owner.email / password kosong.");
+if (!clinicCfg.name || !clinicCfg.subdomain) die("config.clinic.name / subdomain kosong.");
 
 // ============ 1. MIGRASI DB ============
 async function runMigrations() {
@@ -98,50 +99,93 @@ async function runMigrations() {
   console.log(`✅ Migrasi selesai (${ran} baru, ${files.length - ran} dilewati).`);
 }
 
-// ============ 2. SEED AKUN LOGIN AWAL ============
-async function seedAccount() {
+// ============ 2. SEED KLINIK SIAP-PAKAI ============
+// Produk self-hosted = SATU klinik yang sudah jadi. Buat: klinik (aktif) + owner
+// (role owner) + langganan kekal (bayar-sekali, tak pernah expired) + landing
+// default. TIDAK ada super_admin. Idempoten (aman diulang).
+async function seedClinic() {
   const supabase = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data, error } = await supabase.auth.admin.createUser({
+  const disciplines = Array.isArray(clinicCfg.specializations) && clinicCfg.specializations.length
+    ? clinicCfg.specializations
+    : [clinicCfg.clinicType || "fisioterapi"];
+
+  // 2a. Upsert klinik (unik per subdomain → idempoten).
+  const { data: clinic, error: cErr } = await supabase
+    .from("clinics")
+    .upsert(
+      {
+        name: clinicCfg.name,
+        subdomain: clinicCfg.subdomain,
+        clinic_type: disciplines[0],
+        specializations: disciplines,
+        status: "active",
+      },
+      { onConflict: "subdomain" },
+    )
+    .select("id")
+    .single();
+  if (cErr || !clinic) die(`Gagal membuat klinik: ${cErr?.message ?? "unknown"}`);
+  const clinicId = clinic.id;
+  console.log(`   ✓ Klinik: ${clinicCfg.name} (${disciplines.join("+")})`);
+
+  // 2b. Akun owner (role owner, terhubung ke klinik).
+  const { data: created, error: uErr } = await supabase.auth.admin.createUser({
     email: owner.email,
     password: owner.password,
     email_confirm: true,
-    user_metadata: { full_name: owner.name || owner.email, role: seedRole },
+    user_metadata: { full_name: owner.name || owner.email, role: "owner", clinic_id: clinicId },
   });
-
-  let userId = data?.user?.id;
-  if (error) {
-    if (!/already.*registered|exists/i.test(error.message)) {
-      die(`Gagal membuat akun: ${error.message}`);
-    }
-    console.warn("⚠️  Akun sudah ada, memastikan role & reset password…");
-    // Ambil id user yang sudah ada lewat listUsers (email match).
+  let userId = created?.user?.id;
+  if (uErr) {
+    if (!/already.*registered|exists/i.test(uErr.message)) die(`Gagal membuat owner: ${uErr.message}`);
     const { data: list } = await supabase.auth.admin.listUsers();
     userId = list?.users?.find((u) => u.email?.toLowerCase() === owner.email.toLowerCase())?.id;
-    // Reset password ke nilai awal yang ditampilkan ke super admin, agar selalu cocok.
-    if (userId) {
-      await supabase.auth.admin.updateUserById(userId, { password: owner.password });
-    }
+    if (userId) await supabase.auth.admin.updateUserById(userId, { password: owner.password });
   }
-
   if (userId) {
     const { error: upErr } = await supabase
       .from("users")
-      .update({
-        role: seedRole,
-        clinic_id: null,
-        status: "active",
-        full_name: owner.name || owner.email,
-      })
+      .update({ role: "owner", clinic_id: clinicId, status: "active", full_name: owner.name || owner.email })
       .eq("id", userId);
-    if (upErr) die(`Gagal set role ${seedRole}: ${upErr.message}`);
+    if (upErr) die(`Gagal set owner: ${upErr.message}`);
   }
-  console.log(`✅ Akun siap: ${owner.email} (role ${seedRole}).`);
+  console.log(`   ✓ Owner: ${owner.email}`);
+
+  // 2c. Langganan kekal (bayar-sekali) — agar tak pernah terkunci cron expired.
+  const { data: existingSub } = await supabase
+    .from("subscriptions")
+    .select("id")
+    .eq("clinic_id", clinicId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!existingSub) {
+    const { error: sErr } = await supabase.from("subscriptions").insert({
+      clinic_id: clinicId,
+      plan_type: "1_year",
+      amount: 0,
+      started_at: new Date().toISOString(),
+      expires_at: "2099-12-31T00:00:00Z",
+      status: "active",
+      notes: "Self-hosted (bayar sekali) — langganan kekal.",
+    });
+    if (sErr) die(`Gagal membuat langganan: ${sErr.message}`);
+  }
+  console.log("   ✓ Langganan kekal");
+
+  // 2d. Landing default (idempoten per clinic_id).
+  const { error: lErr } = await supabase.from("landing_page_content").upsert(
+    { clinic_id: clinicId, hero_title: clinicCfg.name },
+    { onConflict: "clinic_id" },
+  );
+  if (lErr) console.warn(`⚠️  landing default gagal (tak fatal): ${lErr.message}`);
+
+  console.log(`✅ Klinik siap-pakai. Owner login di domain klinik → dashboard owner.`);
 }
 
-console.log(`▶ Provisioning DB untuk: ${cfg.clinicName ?? cfg.clinicId ?? "(klinik)"}`);
+console.log(`▶ Provisioning DB untuk: ${clinicCfg.name ?? "(klinik)"}`);
 await runMigrations();
-await seedAccount();
+await seedClinic();
 console.log("🎉 Selesai. Lanjut ke langkah deploy Cloudflare di panduan (DEPLOY.md).");

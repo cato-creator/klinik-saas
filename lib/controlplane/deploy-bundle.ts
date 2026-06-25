@@ -75,21 +75,25 @@ function buildDbUrl(ref: string | null, password: string, poolerUrl: string | nu
 export type BuildBundleInput = {
   clinic: SelfHostedClinic;
   secrets: DeploySecrets;
-  /** Password awal akun admin yang di-seed (digenerate di server, ditampilkan sekali). */
+  /** Password awal akun owner yang di-seed (digenerate di server, ditampilkan sekali). */
   seedPassword: string;
-  /** Role akun yang di-seed di instance klinik. Default super_admin (lihat runbook). */
-  seedRole?: "super_admin" | "owner";
 };
 
 export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
   const { clinic, secrets, seedPassword } = input;
-  const seedRole = input.seedRole ?? "super_admin";
 
   const ref = deriveProjectRef(clinic);
   const rootDomain = clinic.target_domain?.trim() || null;
   const workerName = slugifyWorkerName(
     clinic.cloudflare_pages_project || rootDomain || clinic.name,
   );
+  // Subdomain internal klinik (kunci resolusi single-clinic mode). Pakai slug yang
+  // sama dengan worker — instance ini hanya melayani satu klinik.
+  const clinicSubdomain = workerName;
+  const specializations =
+    Array.isArray(clinic.specializations) && clinic.specializations.length
+      ? clinic.specializations
+      : [clinic.clinic_type || "fisioterapi"];
 
   // Validasi kelengkapan — sebut field yang kosong agar operator tahu apa yang kurang.
   const missing: string[] = [];
@@ -113,7 +117,13 @@ export function buildDeployBundle(input: BuildBundleInput): DeployBundle {
     clinicName: clinic.name,
     targetDomain: rootDomain,
     rootDomain,
-    seedRole,
+    // Detail klinik untuk seed klinik siap-pakai (single-clinic mode).
+    clinic: {
+      name: clinic.name,
+      subdomain: clinicSubdomain,
+      clinicType: specializations[0],
+      specializations,
+    },
     owner: {
       email: clinic.owner_email,
       name: clinic.owner_name || clinic.name,
@@ -237,13 +247,13 @@ Di dashboard Cloudflare klinik: tambahkan **Workers Route** \`${domain}/*\` dan
 proxied). Tunggu SSL hijau.
 
 ## 6. Smoke test  →  checklist: \`smoke_test\`  (MANUAL)
-Buka \`https://${domain}\`, login di \`/admin\` pakai email owner + password awal
-(lihat config), buat data klinik via wizard, coba 1 booking. Kalau semua jalan →
+Buka \`https://${domain}\`, login di \`/auth/login\` pakai email owner + password awal
+(lihat config), cek dashboard owner & coba 1 booking. Kalau semua jalan →
 tandai semua langkah \`done\` di panel & ubah status provisioning jadi **live**.
 
 ---
 **Akun login awal:** email = \`${clinic.owner_email ?? "<email>"}\` · password = lihat \`owner.password\` di config.
-Catatan role: akun di-seed sebagai \`super_admin\` di instance milik mereka sendiri,
-supaya bisa membuat & mengelola klinik lewat alur \`/admin\` yang sudah ada.
+Instance ini = SATU klinik siap-pakai (mode self-hosted): domain langsung tampil
+landing klinik, login owner → dashboard. TANPA super admin.
 `;
 }
