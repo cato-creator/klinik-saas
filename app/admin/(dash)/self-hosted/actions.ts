@@ -16,6 +16,7 @@ import {
 import { assembleBundleForClinic } from "@/lib/controlplane/provision";
 import { createDeployJob } from "@/lib/controlplane/deploy-jobs";
 import { triggerPipeline } from "@/lib/controlplane/gitlab";
+import { triggerWorkflow, isGitHubConfigured } from "@/lib/controlplane/github";
 
 export type ActionResult = { ok: boolean; error?: string; value?: string; redirectUrl?: string };
 
@@ -338,9 +339,11 @@ export async function generateDeployBundle(
   };
 }
 
-// ============ DEPLOY OTOMATIS (Fase 2B — picu pipeline GitLab) ============
-// Membuat token job sekali-pakai, lalu memicu pipeline GitLab yang jalan di runner
-// kita. Runner mengambil config & melaporkan langkah balik ke panel via token itu.
+// ============ DEPLOY OTOMATIS (Fase 2B — picu CI: GitHub atau GitLab) ============
+// Membuat token job sekali-pakai, lalu memicu pipeline CI yang jalan di runner kita.
+// Provider: GitHub (repository_dispatch) bila GITHUB_REPO+GITHUB_TOKEN diset, jika
+// tidak GitLab (pipeline trigger). Runner mengambil config & melaporkan langkah
+// balik ke panel via token itu.
 export type AutoDeployResult = { ok: boolean; error?: string; pipelineUrl?: string };
 
 function panelBaseUrl(): string {
@@ -372,11 +375,9 @@ export async function triggerAutoDeploy(
   const job = await createDeployJob(clinicId, me.id);
   if ("error" in job) return { ok: false, error: `Gagal membuat job: ${job.error}` };
 
-  const result = await triggerPipeline({
-    CLINIC_ID: clinicId,
-    JOB_TOKEN: job.token,
-    PANEL_URL: panelUrl,
-  });
+  const vars = { CLINIC_ID: clinicId, JOB_TOKEN: job.token, PANEL_URL: panelUrl };
+  const provider = isGitHubConfigured() ? "github" : "gitlab";
+  const result = provider === "github" ? await triggerWorkflow(vars) : await triggerPipeline(vars);
 
   await logSelfHostedAudit({
     actorUserId: me.id,
@@ -384,8 +385,9 @@ export async function triggerAutoDeploy(
     action: "deploy.trigger",
     clinicId,
     metadata: {
+      provider,
       ok: result.ok,
-      pipeline_id: result.ok ? result.pipelineId : null,
+      web_url: result.ok ? result.webUrl : null,
       error: result.ok ? null : result.error,
     },
     ip: await clientIp(),

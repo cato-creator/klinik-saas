@@ -12,8 +12,9 @@ export default function AutoDeploy({ clinicId }: { clinicId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500">
-        Memicu pipeline GitLab di runner kamu: migrasi DB + seed akun otomatis, lalu (bila
-        diaktifkan) build &amp; deploy Cloudflare. Status tiap langkah masuk ke checklist sendiri.
+        Memicu pipeline CI (GitHub/GitLab) di runner kamu: migrasi DB + seed akun otomatis, lalu
+        (bila diaktifkan) build &amp; deploy Cloudflare. Status tiap langkah masuk ke checklist
+        sendiri.
       </p>
 
       <form action={action}>
@@ -30,7 +31,7 @@ export default function AutoDeploy({ clinicId }: { clinicId: string }) {
       {state?.error && <p className="text-xs text-red-600 dark:text-red-400">{state.error}</p>}
       {state?.ok && (
         <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-          ✓ Pipeline dipicu. Pantau progres di checklist (terisi otomatis) atau di GitLab.
+          ✓ Pipeline dipicu. Pantau progres di checklist (terisi otomatis) atau di CI.
           {state.pipelineUrl && (
             <>
               {" "}
@@ -40,7 +41,7 @@ export default function AutoDeploy({ clinicId }: { clinicId: string }) {
                 rel="noopener noreferrer"
                 className="font-medium underline"
               >
-                Buka pipeline ↗
+                Buka CI ↗
               </a>
             </>
           )}
@@ -48,9 +49,9 @@ export default function AutoDeploy({ clinicId }: { clinicId: string }) {
       )}
 
       <p className="text-xs text-zinc-500">
-        Pastikan runner GitLab kamu online & PC menyala. Tahap Cloudflare aktif bila CI/CD variable
+        Pastikan runner CI kamu online & PC menyala. Tahap Cloudflare aktif bila variable
         <code className="mx-1 rounded bg-zinc-100 px-1 dark:bg-zinc-800">DEPLOY_CLOUDFLARE=1</code>
-        diset di GitLab.
+        diteruskan saat memicu.
       </p>
     </div>
   );

@@ -1,0 +1,33 @@
+# ============================================================
+# Provisioning klinik self-hosted via GitHub Actions (alternatif GitLab CI).
+#
+# Dipicu dari panel super admin (tombol "Deploy otomatis") lewat repository_dispatch.
+# Jalan di RUNNER SENDIRI (PC kita, label self-hosted) — pakai Node/npm/wrangler
+# yang sudah terpasang. Logika ada di scripts/ci-provision.mjs (CI-agnostic).
+# ============================================================
+name: Provision clinic
+
+on:
+  repository_dispatch:
+    types: [provision-clinic]
+
+jobs:
+  provision-clinic:
+    runs-on: [self-hosted]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node version
+        run: node --version
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Provision
+        run: node scripts/ci-provision.mjs
+        env:
+          CLINIC_ID: ${{ github.event.client_payload.CLINIC_ID }}
+          JOB_TOKEN: ${{ github.event.client_payload.JOB_TOKEN }}
+          PANEL_URL: ${{ github.event.client_payload.PANEL_URL }}
+          DEPLOY_CLOUDFLARE: ${{ github.event.client_payload.DEPLOY_CLOUDFLARE }}
