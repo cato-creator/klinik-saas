@@ -235,6 +235,8 @@ export interface Booking {
   payment_method: PaymentMethod | null
   payment_proof_url: string | null
   amount: number
+  /** Tindakan/modalitas yang dikerjakan pada kunjungan ini. */
+  modalities?: string[] | null
   created_by_role: string
   created_at: string
   updated_at: string
@@ -254,6 +256,7 @@ export interface SessionNote {
   assessment: string | null
   plan: string | null
   home_program: string | null
+  home_program_images: string[] | null
   next_session: string | null
   created_at: string
   updated_at: string

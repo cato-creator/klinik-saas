@@ -11,14 +11,17 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, Loader2, Save, X } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, X, Search } from 'lucide-react'
 
 /* ---------------- Tipe ---------------- */
 
 // Bentuk kasus yang bisa diterapkan ke form (preset bawaan maupun template DB).
 export type CaseLike = { id: string; name: string; data: Record<string, unknown> }
 // Kasus bawaan (FISIO_CASES / OT_CASES) — `data` di-cast ke object generik.
-export type PresetCase = { id: string; name: string; emoji?: string; data: object }
+// `category` (opsional) = key kategori utk pengelompokan di dropdown (mis. fisio).
+export type PresetCase = { id: string; name: string; emoji?: string; category?: string; data: object }
+// Definisi kategori (key → label) utk mengelompokkan & memberi judul grup.
+export type CaseCategory = { key: string; label: string }
 // Template buatan sendiri dari DB.
 export type CustomTemplate = { id: string; name: string; emoji: string | null; data: Record<string, unknown> }
 
@@ -157,6 +160,7 @@ export function CaseDropdown({
   currentData,
   onApply,
   excludeKeys = [],
+  categories,
 }: {
   discipline?: string
   presets: readonly PresetCase[]
@@ -165,6 +169,8 @@ export function CaseDropdown({
   onApply: (c: CaseLike) => void
   // Key yang TIDAK ikut disimpan saat membuat template dari isian saat ini.
   excludeKeys?: string[]
+  // Kategori utk mengelompokkan preset (urutan & label grup). Kosong → 1 grup.
+  categories?: readonly CaseCategory[]
 }) {
   const { templates, reload } = useCaseTemplates(discipline)
   const [showSave, setShowSave] = useState(false)
@@ -173,17 +179,54 @@ export function CaseDropdown({
   const [name, setName] = useState('')
   const [err, setErr] = useState('')
   const [confirmId, setConfirmId] = useState<string | null>(null)
+  // Combobox: kata kunci pencarian + status panel terbuka.
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  // Label kategori utk dimasukkan ke teks yang dicari (mis. ketik "neuro").
+  const catLabel = (key?: string) =>
+    (categories?.find((c) => c.key === key)?.label ?? '')
+
+  function choose(c: CaseLike) {
+    onApply(c)
+    setOpen(false)
+    setQuery('')
+  }
 
   function handleSelect(val: string) {
     if (!val) return
     if (val.startsWith('custom:')) {
       const t = templates.find((x) => `custom:${x.id}` === val)
-      if (t) onApply({ id: val, name: t.name, data: t.data })
+      if (t) choose({ id: val, name: t.name, data: t.data })
     } else {
       const c = presets.find((x) => x.id === val)
-      if (c) onApply({ id: c.id, name: c.name, data: c.data as Record<string, unknown> })
+      if (c) choose({ id: c.id, name: c.name, data: c.data as Record<string, unknown> })
     }
   }
+
+  // ---- Pencarian & pengelompokan ----
+  const q = query.trim().toLowerCase()
+  const matchPreset = (p: PresetCase) =>
+    !q || p.name.toLowerCase().includes(q) || catLabel(p.category).toLowerCase().includes(q)
+  const filteredPresets = presets.filter(matchPreset)
+  const filteredTemplates = templates.filter((t) => !q || t.name.toLowerCase().includes(q))
+
+  // Grup preset per kategori (bila ada); selain itu satu grup "Kasus".
+  const presetGroups =
+    categories && categories.length
+      ? categories
+          .map((cat) => ({ label: cat.label, items: filteredPresets.filter((p) => p.category === cat.key) }))
+          .filter((g) => g.items.length > 0)
+      : [{ label: 'Kasus', items: filteredPresets }]
+
+  const noResult = filteredPresets.length === 0 && filteredTemplates.length === 0
+
+  // Nama kasus yang sedang terpilih (utk placeholder).
+  const selectedName = !activeId
+    ? ''
+    : activeId.startsWith('custom:')
+      ? templates.find((t) => `custom:${t.id}` === activeId)?.name ?? ''
+      : presets.find((p) => p.id === activeId)?.name ?? ''
 
   // Ambil snapshot isian saat ini (buang field pembukuan & nilai kosong).
   function snapshot(): Record<string, unknown> {
@@ -244,27 +287,71 @@ export function CaseDropdown({
   return (
     <div className="space-y-2.5">
       <div className="relative">
-        <select value={activeId ?? ''} onChange={(e) => handleSelect(e.target.value)} className={selectCls}>
-          <option value="">Pilih kasus</option>
-          <optgroup label="Kasus Bawaan">
-            {presets.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.emoji ? `${c.emoji} ` : ''}
-                {c.name}
-              </option>
-            ))}
-          </optgroup>
-          {templates.length > 0 && (
-            <optgroup label="Template Saya (Klinik)">
-              {templates.map((t) => (
-                <option key={t.id} value={`custom:${t.id}`}>
-                  {t.name}
-                </option>
-              ))}
-            </optgroup>
+        {/* Kotak cari + pilih kasus (combobox). Ketik nama/kategori untuk memfilter. */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+            onFocus={() => setOpen(true)}
+            placeholder={selectedName ? `${selectedName} (ketik untuk ganti)` : 'Cari atau pilih kasus…'}
+            className={`${selectCls} pl-9 pr-9`}
+          />
+          {query ? (
+            <button type="button" onClick={() => { setQuery(''); setOpen(true) }} aria-label="Bersihkan"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          ) : (
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">▾</span>
           )}
-        </select>
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">▾</span>
+        </div>
+
+        {open && (
+          <>
+            {/* Klik di luar → tutup panel. */}
+            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+            <div className="absolute left-0 right-0 z-20 mt-1 max-h-72 overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+              {noResult ? (
+                <p className="px-3 py-3 text-center text-xs text-gray-400">Tidak ada kasus cocok. Tambahkan kasus baru di bawah.</p>
+              ) : (
+                <>
+                  {presetGroups.map((g) => (
+                    <div key={g.label}>
+                      <p className="sticky top-0 bg-gray-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">{g.label}</p>
+                      {g.items.map((c) => {
+                        const on = activeId === c.id
+                        return (
+                          <button key={c.id} type="button"
+                            onClick={() => handleSelect(c.id)}
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-teal-50 ${on ? 'bg-teal-50 font-semibold text-teal-700' : 'text-gray-700'}`}>
+                            {c.emoji && <span>{c.emoji}</span>}
+                            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
+                  {filteredTemplates.length > 0 && (
+                    <div>
+                      <p className="sticky top-0 bg-gray-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">Template Saya (Klinik)</p>
+                      {filteredTemplates.map((t) => {
+                        const on = activeId === `custom:${t.id}`
+                        return (
+                          <button key={t.id} type="button"
+                            onClick={() => handleSelect(`custom:${t.id}`)}
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-teal-50 ${on ? 'bg-teal-50 font-semibold text-teal-700' : 'text-gray-700'}`}>
+                            <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Simpan isian saat ini sebagai template */}

@@ -8,6 +8,8 @@ const schema = z.object({
   booking_id: z.string().uuid(),
   note_id: z.string().uuid().optional(),
   home_program: z.string().optional(),
+  // URL gambar latihan (Cloudinary) — opsional.
+  home_program_images: z.array(z.string().url()).max(12).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -32,7 +34,11 @@ export async function POST(request: NextRequest) {
     }
 
     const value = parsed.data.home_program?.trim() || null
+    const images = parsed.data.home_program_images ?? []
 
+    // Tulis teks home_program dulu (kolom lama — selalu ada). Kembalikan id agar
+    // bisa menulis gambar terpisah.
+    let noteId = parsed.data.note_id ?? null
     if (parsed.data.note_id) {
       await db.from('session_notes')
         .update({ home_program: value, updated_at: new Date().toISOString() })
@@ -40,13 +46,23 @@ export async function POST(request: NextRequest) {
         .eq('booking_id', booking.id)
         .eq('clinic_id', auth.clinicId)
     } else {
-      await db.from('session_notes').insert({
+      const { data: inserted } = await db.from('session_notes').insert({
         clinic_id: auth.clinicId,
         booking_id: booking.id,
         therapist_id: booking.therapist_id,
         patient_id: booking.patient_id,
         home_program: value,
-      })
+      }).select('id').single()
+      noteId = inserted?.id ?? null
+    }
+
+    // Tulis gambar SECARA TERPISAH & best-effort: bila migrasi 0022 (kolom
+    // home_program_images) belum dijalankan, simpan teks tetap berhasil.
+    if (noteId) {
+      await db.from('session_notes')
+        .update({ home_program_images: images })
+        .eq('id', noteId)
+        .eq('clinic_id', auth.clinicId)
     }
 
     await logMedicalAccess({

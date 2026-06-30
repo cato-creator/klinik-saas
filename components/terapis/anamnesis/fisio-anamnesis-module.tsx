@@ -18,7 +18,7 @@ import {
 import { formatDate } from '@/lib/utils'
 import type { Assessment, AnamnesisData } from '@/types'
 import { BodyMap, type PainRegion } from './body-map'
-import { FISIO_CASES, KELUHAN_TAGS, ONSET_OPTIONS, MODALITAS_OPTIONS } from './fisio-cases'
+import { FISIO_CASES, FISIO_CATEGORIES, KELUHAN_TAGS, ONSET_OPTIONS, MODALITAS_OPTIONS } from './fisio-cases'
 import { CaseDropdown, ChipMultiAdd, type CaseLike } from './case-templates'
 
 /* ---------------- Data model ---------------- */
@@ -317,8 +317,8 @@ function QuickForm({ patientId, discipline, onClose, onSwitch }: { patientId: st
     <FormShell title="Anamnesis Cepat" onClose={onClose} onSave={save} saving={saving} error={error}
       switchLabel="Mode Lengkap →" onSwitch={onSwitch}>
       <div className="space-y-4">
-        <QuickSection title="1. Pilih Kasus" hint="Pilih kasus atau tambah kasus baru">
-          <CaseDropdown discipline={discipline} presets={FISIO_CASES} activeId={d.case_template}
+        <QuickSection title="1. Pilih Kasus" hint="Cari/pilih kasus per kategori atau tambah kasus baru">
+          <CaseDropdown discipline={discipline} presets={FISIO_CASES} categories={FISIO_CATEGORIES} activeId={d.case_template}
             currentData={d as unknown as Record<string, unknown>} onApply={(c) => setD((prev) => applyCaseLike(prev, c))} />
         </QuickSection>
 
@@ -458,8 +458,8 @@ function AnamnesisWizard({ patientId, discipline, onClose, onSwitch }: { patient
         {/* STEP 1 — ANAMNESIS */}
         {step === 0 && (
           <>
-            <QuickSection title="Pilih Kasus (opsional)" hint="Pilih kasus atau tambah kasus baru">
-              <CaseDropdown discipline={discipline} presets={FISIO_CASES} activeId={d.case_template}
+            <QuickSection title="Pilih Kasus (opsional)" hint="Cari/pilih kasus per kategori atau tambah kasus baru">
+              <CaseDropdown discipline={discipline} presets={FISIO_CASES} categories={FISIO_CATEGORIES} activeId={d.case_template}
                 currentData={d as unknown as Record<string, unknown>} onApply={(c) => setD((prev) => applyCaseLike(prev, c))} />
             </QuickSection>
             <BodyMap value={d.pain_regions ?? []} onChange={(v) => set('pain_regions', v)} />

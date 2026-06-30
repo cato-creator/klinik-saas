@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
-import { ArrowLeft, ChevronRight, NotebookPen, Flag, History, CheckCircle2, Circle, House } from 'lucide-react'
+import { ArrowLeft, ChevronRight, NotebookPen, Flag, History, CheckCircle2, Circle, House, Activity } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase/server'
 import { logMedicalAccess } from '@/lib/audit'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,8 @@ import { GoalsModule } from '@/components/terapis/goals-module'
 import { ClinicalEdit } from '@/components/terapis/clinical-edit'
 import { IdentityEdit } from '@/components/terapis/identity-edit'
 import { HomeProgramEditor } from '@/components/terapis/home-program-editor'
+import { HomeProgramImages } from '@/components/terapis/home-program-images'
+import { SessionTreatments } from '@/components/terapis/session-treatments'
 import { PrintButton } from '@/components/terapis/print-button'
 import { formatDate, formatDatetime, formatRM, getBookingStatusLabel, getBookingStatusColor, isBookingConfirmed, calculateAge, isUnscheduledTime, formatTime } from '@/lib/utils'
 
@@ -184,7 +186,7 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
   // ---- Home Program ---- (ikut aturan: terapis hanya lihat disiplinnya sendiri)
   const homePrograms = notes
     .map((n) => ({ n, b: bookingById.get(n.booking_id) }))
-    .filter((x) => x.b && x.n.home_program && (!restrictByOwn || discOf(x.b!) === ownDiscipline))
+    .filter((x) => x.b && (x.n.home_program || (x.n.home_program_images?.length ?? 0) > 0) && (!restrictByOwn || discOf(x.b!) === ownDiscipline))
     .sort((a, b) => (a.b!.session_date < b.b!.session_date ? 1 : -1))
 
   // Editor home program untuk sesi yang sedang dikerjakan (update kolom home_program
@@ -201,6 +203,7 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
           bookingId={workBooking.id}
           noteId={latestWorkNote?.id}
           initial={latestWorkNote?.home_program ?? ''}
+          initialImages={latestWorkNote?.home_program_images ?? []}
           dateLabel={formatDate(workBooking.session_date)}
         />
       )}
@@ -219,9 +222,14 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
                     <p className="text-xs font-semibold text-teal-700">{formatDate(b!.session_date)}</p>
                     <p className="text-xs text-gray-400">{therapistName}</p>
                   </div>
-                  <div className="rounded-r-lg border-l-[3px] border-green-500 bg-green-50 px-4 py-2.5">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-green-900">{n.home_program}</p>
-                  </div>
+                  {n.home_program && (
+                    <div className="rounded-r-lg border-l-[3px] border-green-500 bg-green-50 px-4 py-2.5">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-green-900">{n.home_program}</p>
+                    </div>
+                  )}
+                  {(n.home_program_images?.length ?? 0) > 0 && (
+                    <HomeProgramImages images={n.home_program_images} />
+                  )}
                 </div>
               )
             })}
@@ -314,6 +322,22 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
           </div>
 
           <div className="space-y-4">
+            {/* Tampilan tindakan terapi (read-only) — dipilih di tab Tindakan. */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
+                <Activity className="h-4 w-4 text-teal-600" /> Tindakan Terapi
+              </h4>
+              {((workBooking as any).modalities?.length ?? 0) > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {((workBooking as any).modalities as string[]).map((m) => (
+                    <span key={m} className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">{m}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Belum ada tindakan. Pilih di tab Tindakan.</p>
+              )}
+            </div>
+
             <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
               <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Flag className="h-4 w-4 text-teal-600" /> Target Terapi
@@ -393,6 +417,13 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
                 {` · ${therapistName}`}
               </p>
               {note?.assessment && <p className="mt-1 line-clamp-1 text-xs text-gray-600"><span className="font-semibold text-amber-600">A:</span> {note.assessment}</p>}
+              {((b as any).modalities?.length ?? 0) > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {((b as any).modalities as string[]).slice(0, 6).map((m) => (
+                    <span key={m} className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">{m}</span>
+                  ))}
+                </div>
+              )}
             </div>
             <Badge variant={getBookingStatusColor(b.status, (b as any).payment_status) as any}>{getBookingStatusLabel(b.status, (b as any).payment_status)}</Badge>
             {canOpen && <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 transition-colors group-hover:text-teal-500" />}
@@ -422,6 +453,14 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
   // ---- Tindakan = Target Terapi + Home Program (digabung) ----
   const tindakanTab = (
     <div className="space-y-6">
+      {workBooking && (
+        <SessionTreatments
+          bookingId={workBooking.id}
+          discipline={discOf(workBooking)}
+          initial={(workBooking as any).modalities ?? []}
+          locked={!isBookingConfirmed(workBooking.status, (workBooking as any).payment_status)}
+        />
+      )}
       <GoalsModule patientId={patientId} items={visibleGoals as any} />
       <div className="border-t border-gray-100 pt-6">
         <h2 className="mb-3 flex items-center gap-2 font-bold text-gray-900">
