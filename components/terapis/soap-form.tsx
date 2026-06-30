@@ -35,6 +35,12 @@ interface Props {
   hideComplete?: boolean
   /** Tampilkan banner "disalin dari CPPT sebelumnya" (mis. setelah Copy CPPT). */
   copiedNotice?: boolean
+  /**
+   * Daftar terapis untuk DITUGASKAN ke booking yang belum punya terapis.
+   * Hanya diisi untuk admin/owner saat booking belum ber-terapis; saat ada,
+   * tampilkan dropdown wajib pilih terapis sebelum menyimpan.
+   */
+  assignTherapists?: { id: string; name: string }[]
 }
 
 const FIELDS = [
@@ -47,12 +53,18 @@ const FIELDS = [
 const textareaCls =
   'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-all focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
 
-export function SoapForm({ bookingId, initial, canComplete, noteId, onSaved, hideComplete = false, copiedNotice = false }: Props) {
+export function SoapForm({ bookingId, initial, canComplete, noteId, onSaved, hideComplete = false, copiedNotice = false, assignTherapists }: Props) {
   const router = useRouter()
   const [form, setForm] = useState(initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  // Wajib dipilih bila booking belum punya terapis (admin/owner). Auto-pilih bila
+  // hanya ada satu terapis (kasus klinik kecil / mode satu-klinik).
+  const needsAssign = !!assignTherapists && assignTherapists.length > 0
+  const [therapistId, setTherapistId] = useState(
+    needsAssign && assignTherapists!.length === 1 ? assignTherapists![0].id : '',
+  )
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -61,6 +73,10 @@ export function SoapForm({ bookingId, initial, canComplete, noteId, onSaved, hid
 
   async function submit() {
     setError('')
+    if (needsAssign && !therapistId) {
+      setError('Pilih terapis untuk kunjungan ini terlebih dahulu.')
+      return
+    }
     setSaving(true)
     setSaved(false)
     try {
@@ -72,6 +88,7 @@ export function SoapForm({ bookingId, initial, canComplete, noteId, onSaved, hid
           note_id: noteId,
           ...form,
           next_session: form.next_session || '',
+          ...(needsAssign && therapistId ? { therapist_id: therapistId } : {}),
         }),
       })
       const data = await res.json()
@@ -92,6 +109,26 @@ export function SoapForm({ bookingId, initial, canComplete, noteId, onSaved, hid
 
   return (
     <div className="space-y-4">
+      {/* Pilih terapis — wajib untuk admin/owner saat booking belum ber-terapis. */}
+      {needsAssign && (
+        <div className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-teal-700">
+            Terapis yang menangani
+          </label>
+          <p className="mb-2 text-[11px] text-gray-500">Pilih terapis untuk kunjungan ini sebelum menyimpan catatan.</p>
+          <select
+            value={therapistId}
+            onChange={(e) => { setTherapistId(e.target.value); setError('') }}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-all focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+          >
+            <option value="">— Pilih terapis —</option>
+            {assignTherapists!.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Banner setelah copy */}
       {copiedNotice && (
         <div className="flex items-center gap-2 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">

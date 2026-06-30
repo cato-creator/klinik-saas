@@ -72,6 +72,12 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
 
   if (role === 'therapist' && !therapist) redirect('/terapis/dashboard')
 
+  // Daftar terapis klinik (admin/owner) — untuk menugaskan terapis ke booking yang
+  // belum punya terapis langsung dari editor SOAP.
+  const { data: clinicTherapists } = role !== 'therapist'
+    ? await db.from('therapists').select('id, discipline, is_active, user:users(full_name)').eq('clinic_id', clinicId)
+    : { data: [] as any[] }
+
   const ownDiscipline = (therapist as any)?.discipline as string | null | undefined
   const bookings = (await bq).data ?? []
 
@@ -117,6 +123,16 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
   const workBooking = focusBookingId
     ? bookings.find((b) => b.id === focusBookingId) ?? null
     : editable.find((b) => b.status === 'in_progress') ?? editable.find((b) => b.status === 'confirmed') ?? null
+
+  // Admin/owner membuka booking yang BELUM punya terapis → tawarkan dropdown pilih
+  // terapis di editor SOAP. Saring sesuai disiplin kunjungan (terapis tanpa disiplin
+  // disertakan sbg fallback data lama). Terapis nonaktif tidak ditawarkan.
+  const assignTherapists =
+    role !== 'therapist' && workBooking && !workBooking.therapist_id
+      ? (clinicTherapists ?? [])
+          .filter((t: any) => t.is_active !== false && (!t.discipline || t.discipline === discOf(workBooking)))
+          .map((t: any) => ({ id: t.id as string, name: (t.user as any)?.full_name ?? 'Terapis' }))
+      : undefined
 
   // ---- Konteks kunjungan untuk banner rekam medis ----
   // Layanan kunjungan yang dilihat (Fisio/OT). Bila pasien punya >1 penanganan pada
@@ -318,6 +334,7 @@ export async function PatientCaseView({ patientId, role, userId, clinicId, focus
               dateLabel={formatDate(workBooking.session_date)}
               timeLabel={!isUnscheduledTime(workBooking.session_time) ? formatTime(workBooking.session_time) : undefined}
               previousNotes={allCpptNotes}
+              assignTherapists={assignTherapists}
             />
           </div>
 

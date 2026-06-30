@@ -9,6 +9,8 @@ import { z } from 'zod'
 const schema = z.object({
   booking_id: z.string().uuid(),
   note_id: z.string().uuid().optional(),
+  // Admin/owner: terapis yang dipilih untuk ditugaskan ke booking yang belum ber-terapis.
+  therapist_id: z.string().uuid().optional(),
   subjective: z.string().optional(),
   objective: z.string().optional(),
   assessment: z.string().optional(),
@@ -85,6 +87,28 @@ export async function POST(request: NextRequest) {
     //  - Terapis  → catatan diatribusikan ke dirinya (penulis asli).
     //  - Admin/owner → pakai terapis yang ditugaskan ke booking.
     let effectiveTherapistId = auth.role === 'therapist' ? writerTherapistId : (booking.therapist_id as string | null)
+
+    // Admin/owner: bila booking belum punya terapis, mereka memilih terapis di form.
+    // Validasi terapis itu milik klinik ini, lalu tugaskan ke booking (hanya bila
+    // masih null — aman terhadap balapan).
+    if (!effectiveTherapistId && auth.role !== 'therapist' && parsed.data.therapist_id) {
+      const { data: chosen } = await db
+        .from('therapists')
+        .select('id')
+        .eq('id', parsed.data.therapist_id)
+        .eq('clinic_id', auth.clinicId)
+        .single()
+      if (chosen) {
+        effectiveTherapistId = chosen.id
+        await db
+          .from('bookings')
+          .update({ therapist_id: chosen.id })
+          .eq('id', booking.id)
+          .eq('clinic_id', auth.clinicId)
+          .is('therapist_id', null)
+      }
+    }
+
     if (!effectiveTherapistId) {
       return NextResponse.json({ error: 'Tetapkan terapis untuk booking ini terlebih dahulu.' }, { status: 400 })
     }

@@ -33,6 +33,8 @@ interface Props {
   previousNotes?: PreviousNote[]
   /** true bila booking belum dikonfirmasi admin/owner — input catatan dikunci. */
   locked?: boolean
+  /** Daftar terapis untuk ditugaskan (admin/owner, booking belum ber-terapis). */
+  assignTherapists?: { id: string; name: string }[]
 }
 
 function toInitial(n?: NoteRow) {
@@ -57,7 +59,7 @@ function fromPrevious(n: PreviousNote): FormValues {
   }
 }
 
-export function CpptManager({ bookingId, canComplete, notes, therapistName, signatureUrl, dateLabel, timeLabel, previousNotes, locked = false }: Props) {
+export function CpptManager({ bookingId, canComplete, notes, therapistName, signatureUrl, dateLabel, timeLabel, previousNotes, locked = false, assignTherapists }: Props) {
   const router = useRouter()
   // true = form "buat baru" terbuka. Edit CPPT lama dilakukan inline di kartunya.
   const [creating, setCreating] = useState(false)
@@ -164,6 +166,7 @@ export function CpptManager({ bookingId, canComplete, notes, therapistName, sign
             canComplete={canComplete}
             initial={newInitial}
             copiedNotice={copied}
+            assignTherapists={assignTherapists}
             onSaved={() => setCreating(false)}
           />
         </div>
