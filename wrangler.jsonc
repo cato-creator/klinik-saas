@@ -18,9 +18,9 @@
   ],
   // Variabel & secret di-set lewat: `wrangler secret put NAMA` (jangan commit nilainya).
   // NEXT_PUBLIC_* boleh ditaruh di "vars" karena memang publik.
-  // CLOUDFLARE_ZONE_ID bukan rahasia (zone apkfun.eu.org) → aman di vars.
+  // CLOUDFLARE_ZONE_ID bukan rahasia (zone klinic.id) → aman di vars.
   // CLOUDFLARE_API_TOKEN = RAHASIA → set via `wrangler secret put CLOUDFLARE_API_TOKEN`.
   "vars": {
-    "CLOUDFLARE_ZONE_ID": "dc5c68f4a73620c72b2d4e71bc704867"
+    "CLOUDFLARE_ZONE_ID": "1bf42628707e797b44175d53cd2ea30a"
   }
 }

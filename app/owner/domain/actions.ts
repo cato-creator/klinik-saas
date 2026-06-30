@@ -137,7 +137,7 @@ export async function verifyDomain(_prev: DomainResult | null, _formData: FormDa
       const hint =
         st.data.status === "pending_validation"
           ? "Cloudflare sedang menerbitkan SSL. Pastikan CNAME sudah dibuat, lalu coba lagi beberapa menit."
-          : "Domain belum aktif di Cloudflare. Pastikan CNAME sudah mengarah ke apkfun.eu.org, tunggu propagasi, lalu coba lagi.";
+          : `Domain belum aktif di Cloudflare. Pastikan CNAME sudah mengarah ke ${ROOT_DOMAIN}, tunggu propagasi, lalu coba lagi.`;
       return { ok: false, error: hint };
     }
     detail = "Cloudflare: SSL aktif";
